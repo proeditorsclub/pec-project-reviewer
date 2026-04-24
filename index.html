@@ -9,9 +9,14 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0a0a0a; color: #e0e0e0; min-height: 100vh;
+    background: #0a0a0a; color: #e0e0e0;
+    min-height: 100vh;
   }
-  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    min-height: 100vh;
+  }
   .sidebar {
     background: #111; border-right: 1px solid #222;
     display: flex; flex-direction: column; overflow: hidden;
@@ -50,7 +55,7 @@
   .queue::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
   .queue-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px; margin-bottom: 2px;
+    padding: 10px 10px; margin-bottom: 2px;
     border-radius: 8px; cursor: pointer;
     transition: all 0.15s; position: relative;
   }
@@ -98,11 +103,6 @@
   }
   .now-playing { font-size: 13px; color: #aaa; }
   .now-playing strong { color: #fff; }
-  .speed-badge {
-    display: inline-block; font-size: 10px; padding: 2px 6px;
-    background: #1a3a1a; color: #4caf50; border-radius: 4px; margin-left: 8px;
-  }
-  .speed-badge.turbo { background: #1a2a3a; color: #4f8cff; }
   .player-nav { display: flex; gap: 8px; }
   .nav-btn {
     width: 36px; height: 36px; border-radius: 8px;
@@ -125,7 +125,6 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .vl-text { font-size: 13px; color: #888; }
   .vl-pct { font-size: 22px; font-weight: 700; color: #4f8cff; margin-bottom: 4px; }
-  .vl-speed { font-size: 12px; color: #4caf50; margin-bottom: 8px; }
   .progress-bar-container {
     width: 60%; max-width: 300px; height: 6px;
     background: #333; border-radius: 3px; overflow: hidden; margin-bottom: 12px;
@@ -134,16 +133,6 @@
     height: 100%; width: 0%; background: #4f8cff;
     border-radius: 3px; transition: width 0.3s;
   }
-  .chunk-bars {
-    display: flex; gap: 2px; width: 60%; max-width: 300px; margin-bottom: 8px;
-  }
-  .chunk-bar {
-    flex: 1; height: 4px; background: #222; border-radius: 2px; overflow: hidden;
-  }
-  .chunk-bar-fill {
-    height: 100%; background: #4f8cff; border-radius: 2px; transition: width 0.2s;
-  }
-  .vl-mode { font-size: 10px; color: #555; margin-top: 4px; }
   @media (max-width: 768px) {
     .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .sidebar { max-height: 40vh; }
@@ -155,7 +144,7 @@
   <div class="sidebar">
     <div class="sidebar-header">
       <h1>PEC Project Reviewer</h1>
-      <p>Paste links â turbo downloads â play when ready</p>
+      <p>Paste links → auto-downloads → play when ready</p>
     </div>
     <div class="paste-area">
       <textarea id="linkInput" placeholder="Paste one or more Tally links here (one per line)..."></textarea>
@@ -172,38 +161,32 @@
     <div class="queue" id="queueList"></div>
   </div>
   <div class="main">
-    <div class="player-area">
+    <div class="player-area" id="playerArea">
       <video id="videoPlayer" controls style="display:none;"></video>
       <div class="video-loading" id="videoLoading">
         <div class="vl-spinner"></div>
         <div class="vl-pct" id="vlPct">0%</div>
-        <div class="vl-speed" id="vlSpeed"></div>
         <div class="progress-bar-container">
           <div class="progress-bar-fill" id="vlProgress"></div>
         </div>
-        <div class="chunk-bars" id="chunkBars"></div>
         <div class="vl-text" id="vlText">Downloading...</div>
-        <div class="vl-mode" id="vlMode"></div>
       </div>
       <div class="empty-state" id="emptyState">
-        <div class="icon">â¶</div>
+        <div class="icon">▶</div>
         <p>Paste student project links on the left</p>
-        <small>Turbo download (6 parallel connections) â play when ready</small>
+        <small>Videos download in the background — play when ready</small>
       </div>
     </div>
     <div class="player-bar">
       <div class="now-playing" id="nowPlaying">No video selected</div>
       <div class="player-nav">
-        <button class="nav-btn" onclick="playPrev()" id="prevBtn" disabled>â</button>
-        <button class="nav-btn" onclick="playNext()" id="nextBtn" disabled>â¶</button>
+        <button class="nav-btn" onclick="playPrev()" id="prevBtn" disabled title="Previous">◀</button>
+        <button class="nav-btn" onclick="playNext()" id="nextBtn" disabled title="Next">▶</button>
       </div>
     </div>
   </div>
 </div>
 <script>
-const PARALLEL_CHUNKS = 6;
-const MIN_CHUNK_SIZE = 256 * 1024; // 256KB minimum per chunk
-
 const queue = [];
 let activeId = null;
 let nextId = 0;
@@ -213,9 +196,6 @@ const videoLoading = document.getElementById('videoLoading');
 const vlPct = document.getElementById('vlPct');
 const vlProgress = document.getElementById('vlProgress');
 const vlText = document.getElementById('vlText');
-const vlSpeed = document.getElementById('vlSpeed');
-const vlMode = document.getElementById('vlMode');
-const chunkBars = document.getElementById('chunkBars');
 
 function extractName(url) {
   try { const p = new URL(url).pathname.split('/'); return decodeURIComponent(p[p.length-1]) || 'video'; }
@@ -227,11 +207,6 @@ function formatBytes(b) {
   const i=Math.floor(Math.log(b)/Math.log(k));
   return (b/Math.pow(k,i)).toFixed(1)+' '+s[i];
 }
-function formatSpeed(bytesPerSec) {
-  if (bytesPerSec > 1048576) return (bytesPerSec/1048576).toFixed(1) + ' MB/s';
-  if (bytesPerSec > 1024) return (bytesPerSec/1024).toFixed(0) + ' KB/s';
-  return bytesPerSec.toFixed(0) + ' B/s';
-}
 
 function addLinks() {
   const text = document.getElementById('linkInput').value.trim();
@@ -239,13 +214,7 @@ function addLinks() {
   const urls = text.split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));
   urls.forEach(url => {
     if (queue.find(q=>q.url===url)) return;
-    const item = {
-      id: nextId++, url, name: extractName(url),
-      status: 'loading', blobUrl: null,
-      progress: 0, size: 0, totalSize: 0,
-      speed: 0, mode: '', chunkProgress: [],
-      aborted: false
-    };
+    const item = { id:nextId++, url, name:extractName(url), status:'loading', blobUrl:null, progress:0, size:0, controller:new AbortController() };
     queue.push(item);
     startDownload(item);
   });
@@ -253,332 +222,117 @@ function addLinks() {
   renderQueue(); updateNav();
 }
 
-// Check if server supports range requests by trying one
-async function checkRangeSupport(url) {
-  try {
-    // Try a small range request instead of HEAD (CORS often hides headers from HEAD)
-    const resp = await fetch(url, {
-      headers: { 'Range': 'bytes=0-0' },
-      referrerPolicy: 'no-referrer',
-      credentials: 'omit'
-    });
-    // 206 = server supports ranges, 200 = it doesn't
-    if (resp.status === 206) {
-      const contentRange = resp.headers.get('content-range') || '';
-      // content-range format: "bytes 0-0/TOTAL"
-      const match = contentRange.match(/\/(\d+)/);
-      const totalSize = match ? parseInt(match[1], 10) : 0;
-      const contentType = resp.headers.get('content-type') || '';
-      // Abort this tiny request
-      resp.body.cancel();
-      return { supported: totalSize > 0, totalSize, contentType };
-    }
-    // If 200, server ignores Range header â get size from content-length
-    const contentLength = parseInt(resp.headers.get('content-length') || '0', 10);
-    const contentType = resp.headers.get('content-type') || '';
-    resp.body.cancel();
-    return { supported: false, totalSize: contentLength, contentType };
-  } catch {
-    return { supported: false, totalSize: 0, contentType: '' };
-  }
-}
-
-// Download a single byte range
-async function downloadChunk(url, start, end, chunkIndex, item) {
-  const resp = await fetch(url, {
-    headers: { 'Range': `bytes=${start}-${end}` },
-    referrerPolicy: 'no-referrer',
-    credentials: 'omit'
-  });
-  const reader = resp.body.getReader();
-  const chunks = [];
-  let received = 0;
-  const chunkTotal = end - start + 1;
-
-  while (true) {
-    if (item.aborted) return null;
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    item.chunkProgress[chunkIndex] = Math.round((received / chunkTotal) * 100);
-
-    // Update total progress
-    const totalReceived = item.chunkProgress.reduce((a, b) => a + b, 0);
-    const avgProgress = Math.round(totalReceived / item.chunkProgress.length);
-    item.progress = avgProgress;
-    item.size = Math.round((avgProgress / 100) * item.totalSize);
-    updateItemUI(item);
-  }
-
-  // Merge chunks into single ArrayBuffer
-  const totalLength = chunks.reduce((a, c) => a + c.length, 0);
-  const merged = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return merged;
-}
-
-// Parallel chunked download
-async function parallelDownload(item, totalSize, contentType) {
-  const numChunks = Math.min(PARALLEL_CHUNKS, Math.max(1, Math.floor(totalSize / MIN_CHUNK_SIZE)));
-  const chunkSize = Math.ceil(totalSize / numChunks);
-
-  item.mode = `Turbo ${numChunks}x`;
-  item.chunkProgress = new Array(numChunks).fill(0);
-  item.totalSize = totalSize;
-
-  // Show chunk bars
-  if (activeId === item.id) {
-    chunkBars.innerHTML = Array(numChunks).fill(0).map((_, i) =>
-      `<div class="chunk-bar"><div class="chunk-bar-fill" id="cb_${item.id}_${i}" style="width:0%"></div></div>`
-    ).join('');
-    vlMode.textContent = `${numChunks} parallel connections`;
-  }
-
-  const startTime = Date.now();
-
-  // Create chunk download promises
-  const chunkPromises = [];
-  for (let i = 0; i < numChunks; i++) {
-    const start = i * chunkSize;
-    const end = Math.min(start + chunkSize - 1, totalSize - 1);
-    chunkPromises.push(downloadChunk(item.url, start, end, i, item));
-  }
-
-  const results = await Promise.all(chunkPromises);
-  if (item.aborted) return null;
-
-  // Calculate speed
-  const elapsed = (Date.now() - startTime) / 1000;
-  item.speed = totalSize / elapsed;
-
-  // Merge all chunks in order
-  const merged = new Uint8Array(totalSize);
-  let offset = 0;
-  for (let i = 0; i < numChunks; i++) {
-    if (!results[i]) return null;
-    const start = i * chunkSize;
-    merged.set(results[i], start);
-  }
-
-  // Determine MIME type
-  let mime = contentType;
-  if (!mime || mime === 'application/octet-stream') {
-    const ext = item.name.split('.').pop().toLowerCase();
-    mime = { mov:'video/quicktime', mp4:'video/mp4', webm:'video/webm', avi:'video/x-msvideo', mkv:'video/x-matroska' }[ext] || 'video/mp4';
-  }
-
-  return new Blob([merged], { type: mime });
-}
-
-// Single connection fallback
-async function singleDownload(item) {
-  item.mode = 'Standard 1x';
-  if (activeId === item.id) {
-    chunkBars.innerHTML = '';
-    vlMode.textContent = 'Single connection (server doesn\'t support parallel)';
-  }
-
-  const startTime = Date.now();
-  const resp = await fetch(item.url, { referrerPolicy: 'no-referrer', credentials: 'omit' });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
-  const total = parseInt(resp.headers.get('content-length') || '0', 10);
-  item.totalSize = total;
-  const contentType = resp.headers.get('content-type') || '';
-  const reader = resp.body.getReader();
-  const chunks = [];
-  let received = 0;
-
-  while (true) {
-    if (item.aborted) return null;
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    item.progress = total ? Math.round((received / total) * 100) : -1;
-    item.size = received;
-    item.speed = received / ((Date.now() - startTime) / 1000);
-    updateItemUI(item);
-  }
-
-  let mime = contentType;
-  if (!mime || mime === 'application/octet-stream') {
-    const ext = item.name.split('.').pop().toLowerCase();
-    mime = { mov:'video/quicktime', mp4:'video/mp4', webm:'video/webm', avi:'video/x-msvideo', mkv:'video/x-matroska' }[ext] || 'video/mp4';
-  }
-
-  return new Blob(chunks, { type: mime });
-}
-
 async function startDownload(item) {
   try {
-    // First check if server supports range requests for parallel download
-    const rangeInfo = await checkRangeSupport(item.url);
-
-    let blob;
-    if (rangeInfo.supported && rangeInfo.totalSize > MIN_CHUNK_SIZE * 2) {
-      // Parallel chunked download
-      blob = await parallelDownload(item, rangeInfo.totalSize, rangeInfo.contentType);
-    } else {
-      // Fallback to single connection
-      blob = await singleDownload(item);
+    const resp = await fetch(item.url, { signal:item.controller.signal, referrerPolicy:'no-referrer', credentials:'omit' });
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const total = parseInt(resp.headers.get('content-length')||'0',10);
+    const reader = resp.body.getReader();
+    const chunks = []; let received = 0;
+    while (true) {
+      const {done,value} = await reader.read();
+      if (done) break;
+      chunks.push(value); received += value.length;
+      item.progress = total ? Math.round((received/total)*100) : -1;
+      item.size = received;
+      renderQueueItem(item);
+      if (activeId===item.id) {
+        vlPct.textContent = item.progress>0 ? item.progress+'%' : '';
+        vlProgress.style.width = (item.progress>0?item.progress:50)+'%';
+        vlText.textContent = total ? formatBytes(received)+' / '+formatBytes(total) : 'Downloaded '+formatBytes(received);
+      }
     }
-
-    if (!blob || item.aborted) return;
-
+    let mime = resp.headers.get('content-type')||'';
+    if (!mime||mime==='application/octet-stream') {
+      const ext = item.name.split('.').pop().toLowerCase();
+      mime = {mov:'video/quicktime',mp4:'video/mp4',webm:'video/webm',avi:'video/x-msvideo',mkv:'video/x-matroska'}[ext]||'video/mp4';
+    }
+    const blob = new Blob(chunks, {type:mime});
     item.blobUrl = URL.createObjectURL(blob);
-    item.status = 'ready';
-    item.progress = 100;
-    item.size = blob.size;
-
+    item.status = 'ready'; item.progress = 100;
     renderQueue(); updateNav();
-
-    if (!activeId && queue.filter(q => q.status === 'ready').length === 1) {
-      playItem(item.id);
-    }
-    if (activeId === item.id) {
-      actuallyPlay(item);
-    }
-  } catch (err) {
-    if (item.aborted) return;
-    item.status = 'error';
-    renderQueue();
-  }
-}
-
-function updateItemUI(item) {
-  // Update queue sidebar
-  renderQueueItem(item);
-
-  // Update main player overlay if this is the active item
-  if (activeId === item.id) {
-    vlPct.textContent = item.progress > 0 ? item.progress + '%' : '';
-    vlProgress.style.width = (item.progress > 0 ? item.progress : 0) + '%';
-    vlText.textContent = item.totalSize
-      ? formatBytes(item.size) + ' / ' + formatBytes(item.totalSize)
-      : 'Downloaded ' + formatBytes(item.size);
-    vlSpeed.textContent = item.speed > 0 ? formatSpeed(item.speed) : '';
-
-    // Update individual chunk bars
-    if (item.chunkProgress) {
-      item.chunkProgress.forEach((p, i) => {
-        const bar = document.getElementById(`cb_${item.id}_${i}`);
-        if (bar) bar.style.width = p + '%';
-      });
-    }
+    if (!activeId && queue.filter(q=>q.status==='ready').length===1) playItem(item.id);
+    if (activeId===item.id) actuallyPlay(item);
+  } catch(err) {
+    if (err.name==='AbortError') return;
+    item.status = 'error'; renderQueue();
   }
 }
 
 function playItem(id) {
-  const item = queue.find(q => q.id === id);
+  const item = queue.find(q=>q.id===id);
   if (!item) return;
   activeId = id;
   emptyState.style.display = 'none';
   renderQueue(); updateNav();
-
-  if (item.status === 'ready') {
-    actuallyPlay(item);
-  } else {
+  if (item.status==='ready') { actuallyPlay(item); }
+  else {
     videoPlayer.style.display = 'none';
     videoLoading.className = 'video-loading active';
-    vlPct.textContent = item.progress > 0 ? item.progress + '%' : '...';
-    vlProgress.style.width = (item.progress > 0 ? item.progress : 0) + '%';
-    vlText.textContent = 'Downloading ' + item.name;
-    vlSpeed.textContent = item.speed > 0 ? formatSpeed(item.speed) : '';
-    vlMode.textContent = item.mode || '';
-
-    // Show chunk bars if parallel
-    if (item.chunkProgress && item.chunkProgress.length > 1) {
-      chunkBars.innerHTML = item.chunkProgress.map((p, i) =>
-        `<div class="chunk-bar"><div class="chunk-bar-fill" id="cb_${item.id}_${i}" style="width:${p}%"></div></div>`
-      ).join('');
-    } else {
-      chunkBars.innerHTML = '';
-    }
-
-    document.getElementById('nowPlaying').innerHTML = '<strong>' + item.name + '</strong> â downloading...';
+    vlPct.textContent = item.progress>0 ? item.progress+'%' : '...';
+    vlProgress.style.width = (item.progress>0?item.progress:0)+'%';
+    vlText.textContent = 'Downloading '+item.name;
+    document.getElementById('nowPlaying').innerHTML = '<strong>'+item.name+'</strong> — downloading...';
   }
 }
 
 function actuallyPlay(item) {
   videoLoading.className = 'video-loading';
-  chunkBars.innerHTML = '';
   videoPlayer.style.display = 'block';
   videoPlayer.src = item.blobUrl;
   videoPlayer.play();
-  const speedBadge = item.mode ? `<span class="speed-badge ${item.mode.includes('Turbo') ? 'turbo' : ''}">${item.mode} Â· ${formatSpeed(item.speed)}</span>` : '';
-  document.getElementById('nowPlaying').innerHTML = '<strong>' + item.name + '</strong> â ' + formatBytes(item.size) + speedBadge;
+  document.getElementById('nowPlaying').innerHTML = '<strong>'+item.name+'</strong> — '+formatBytes(item.size);
 }
 
-function removeItem(id, e) {
-  if (e) e.stopPropagation();
-  const idx = queue.findIndex(q => q.id === id);
-  if (idx === -1) return;
+function removeItem(id,e) {
+  if(e) e.stopPropagation();
+  const idx = queue.findIndex(q=>q.id===id);
+  if (idx===-1) return;
   const item = queue[idx];
-  item.aborted = true;
+  if (item.status==='loading') item.controller.abort();
   if (item.blobUrl) URL.revokeObjectURL(item.blobUrl);
-  if (activeId === id) {
-    activeId = null; videoPlayer.style.display = 'none'; videoPlayer.src = '';
-    emptyState.style.display = ''; videoLoading.className = 'video-loading';
-    chunkBars.innerHTML = '';
-    document.getElementById('nowPlaying').textContent = 'No video selected';
+  if (activeId===id) {
+    activeId=null; videoPlayer.style.display='none'; videoPlayer.src='';
+    emptyState.style.display=''; videoLoading.className='video-loading';
+    document.getElementById('nowPlaying').textContent='No video selected';
   }
-  queue.splice(idx, 1); renderQueue(); updateNav();
+  queue.splice(idx,1); renderQueue(); updateNav();
 }
 
-function clearQueue() { [...queue].forEach(q => removeItem(q.id)); }
+function clearQueue() { [...queue].forEach(q=>removeItem(q.id)); }
 
 function playNext() {
-  const idx = queue.findIndex(q => q.id === activeId);
-  for (let i = idx + 1; i < queue.length; i++) {
-    if (queue[i].status === 'ready' || queue[i].status === 'loading') { playItem(queue[i].id); return; }
-  }
+  const idx = queue.findIndex(q=>q.id===activeId);
+  for (let i=idx+1;i<queue.length;i++) { if(queue[i].status==='ready'||queue[i].status==='loading'){playItem(queue[i].id);return;} }
 }
 function playPrev() {
-  const idx = queue.findIndex(q => q.id === activeId);
-  for (let i = idx - 1; i >= 0; i--) {
-    if (queue[i].status === 'ready' || queue[i].status === 'loading') { playItem(queue[i].id); return; }
-  }
+  const idx = queue.findIndex(q=>q.id===activeId);
+  for (let i=idx-1;i>=0;i--) { if(queue[i].status==='ready'||queue[i].status==='loading'){playItem(queue[i].id);return;} }
 }
 
 function updateNav() {
-  const idx = queue.findIndex(q => q.id === activeId);
-  document.getElementById('prevBtn').disabled = idx <= 0;
-  document.getElementById('nextBtn').disabled = idx >= queue.length - 1;
-  const ready = queue.filter(q => q.status === 'ready').length;
-  document.getElementById('queueStats').textContent = ready + ' ready / ' + queue.length + ' total';
+  const idx = queue.findIndex(q=>q.id===activeId);
+  document.getElementById('prevBtn').disabled = idx<=0;
+  document.getElementById('nextBtn').disabled = idx>=queue.length-1;
+  const ready = queue.filter(q=>q.status==='ready').length;
+  document.getElementById('queueStats').textContent = ready+' ready / '+queue.length+' total';
 }
 
 function renderQueue() {
   const list = document.getElementById('queueList');
   list.innerHTML = queue.map(q => {
-    const isActive = q.id === activeId;
-    const icon = q.status === 'loading' ? 'â³' : q.status === 'ready' ? (isActive ? 'ð' : 'â') : 'â';
+    const isActive = q.id===activeId;
+    const icon = q.status==='loading' ? '⏳' : q.status==='ready' ? (isActive?'🔊':'✅') : '❌';
     const statusClass = isActive ? 'playing' : q.status;
-    let meta = '';
-    if (q.status === 'loading') {
-      meta = (q.progress > 0 ? q.progress + '% Â· ' : '') + formatBytes(q.size);
-      if (q.speed > 0) meta += ' Â· ' + formatSpeed(q.speed);
-    } else if (q.status === 'ready') {
-      meta = formatBytes(q.size) + ' Â· Ready';
-      if (q.mode) meta += ' Â· ' + q.mode;
-    } else {
-      meta = 'Failed';
-    }
     return `
-    <div class="queue-item ${isActive ? 'active' : ''} ${q.status}" onclick="playItem(${q.id})">
+    <div class="queue-item ${isActive?'active':''} ${q.status}" onclick="playItem(${q.id})">
       <div class="q-status ${statusClass}">${icon}</div>
       <div class="q-info">
         <div class="q-name">${q.name}</div>
-        <div class="q-meta">${meta}</div>
+        <div class="q-meta">${q.status==='loading' ? (q.progress>0?q.progress+'% · ':'')+formatBytes(q.size) : q.status==='ready' ? formatBytes(q.size)+' · Ready' : 'Failed'}</div>
       </div>
-      <button class="q-remove" onclick="removeItem(${q.id},event)">Ã</button>
-      ${q.status === 'loading' ? `<div class="q-progress"><div class="q-progress-fill" style="width:${Math.max(q.progress, 0)}%"></div></div>` : ''}
+      <button class="q-remove" onclick="removeItem(${q.id},event)">×</button>
+      ${q.status==='loading' ? `<div class="q-progress"><div class="q-progress-fill" style="width:${Math.max(q.progress,0)}%"></div></div>` : ''}
     </div>`;
   }).join('');
 }
@@ -586,25 +340,22 @@ function renderQueue() {
 function renderQueueItem(item) {
   const items = document.querySelectorAll('.queue-item');
   const idx = queue.indexOf(item);
-  if (idx >= 0 && items[idx]) {
+  if (idx>=0 && items[idx]) {
     const meta = items[idx].querySelector('.q-meta');
     const prog = items[idx].querySelector('.q-progress-fill');
-    let metaText = (item.progress > 0 ? item.progress + '% Â· ' : '') + formatBytes(item.size);
-    if (item.speed > 0) metaText += ' Â· ' + formatSpeed(item.speed);
-    if (meta) meta.textContent = metaText;
-    if (prog) prog.style.width = Math.max(item.progress, 0) + '%';
+    if(meta) meta.textContent = (item.progress>0?item.progress+'% · ':'')+formatBytes(item.size);
+    if(prog) prog.style.width = Math.max(item.progress,0)+'%';
   }
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-  if (e.key === 'ArrowRight') { e.preventDefault(); playNext(); }
-  if (e.key === 'ArrowLeft') { e.preventDefault(); playPrev(); }
-  if (e.code === 'Space') { e.preventDefault(); videoPlayer.paused ? videoPlayer.play() : videoPlayer.pause(); }
-  if (e.code === 'KeyF') { document.fullscreenElement ? document.exitFullscreen() : videoPlayer.requestFullscreen(); }
+  if (e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT') return;
+  if (e.key==='ArrowRight') { e.preventDefault(); playNext(); }
+  if (e.key==='ArrowLeft') { e.preventDefault(); playPrev(); }
+  if (e.code==='Space') { e.preventDefault(); videoPlayer.paused?videoPlayer.play():videoPlayer.pause(); }
+  if (e.code==='KeyF') { document.fullscreenElement?document.exitFullscreen():videoPlayer.requestFullscreen(); }
 });
-videoPlayer.addEventListener('ended', () => { playNext(); });
+videoPlayer.addEventListener('ended', ()=>{ playNext(); });
 </script>
 </body>
 </html>
-
